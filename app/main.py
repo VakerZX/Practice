@@ -1,40 +1,43 @@
 """
-Точка входа: читает данные из БД и выводит их на экран.
+Точка входа FastAPI-приложения.
 
 Запуск (из корня проекта, с активированным venv):
-    python -m app.main
+    uvicorn app.main:app --reload
+
+Документация Swagger будет доступна по адресу:
+    http://127.0.0.1:8000/docs
 """
 
-from app.db import crud
-from app.db.db import SessionLocal
+from contextlib import asynccontextmanager
+
+from fastapi import FastAPI
+
+from app.api import books, categories
+from app.db.db import init_db
 
 
-def main():
-    db = SessionLocal()
-    try:
-        categories = crud.get_categories(db)
-
-        if not categories:
-            print("В базе данных пока нет категорий. Сначала запустите init_db.py")
-            return
-
-        for category in categories:
-            print(f"\nКатегория: {category.title} (id={category.id})")
-            print("-" * 40)
-
-            books = [book for book in category.books]
-            if not books:
-                print("  (в этой категории пока нет книг)")
-                continue
-
-            for book in books:
-                print(f"  • {book.title}")
-                print(f"    Цена: {book.price} руб.")
-                print(f"    Описание: {book.description}")
-                print(f"    Ссылка: {book.url or '(пусто)'}")
-    finally:
-        db.close()
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Выполняется при старте приложения: поднимаем подключение к БД
+    # и создаём таблицы, если их ещё нет
+    init_db()
+    yield
+    # Здесь можно было бы закрывать соединения при остановке приложения
 
 
-if __name__ == "__main__":
-    main()
+app = FastAPI(
+    title="Octagon Books API",
+    description="Простой CRUD API для книг и категорий на FastAPI + SQLAlchemy + PostgreSQL",
+    version="1.0.0",
+    lifespan=lifespan,
+)
+
+
+@app.get("/health", tags=["health"])
+def health_check():
+    return {"status": "ok"}
+
+
+# Подключаем роутеры
+app.include_router(categories.router)
+app.include_router(books.router)
